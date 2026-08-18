@@ -1,0 +1,70 @@
+name: Deploy to Galaxy Tool Shed
+
+on:
+  push:
+    tags:
+      - "v*"          # trigger on version tags, e.g. v0.6.0
+    paths:
+      - "beegees/galaxy/**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install planemo
+        run: pip install planemo
+
+      - name: Lint tool XML
+        run: planemo lint beegees/galaxy/beegees.xml
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install planemo
+        run: pip install planemo
+
+      - name: Run tool tests
+        run: |
+          planemo test \
+            --galaxy_branch release_24.1 \
+            --conda_auto_install \
+            --conda_auto_init \
+            beegees/galaxy/beegees.xml
+
+  shed_upload:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install planemo
+        run: pip install planemo
+
+      - name: Upload to Tool Shed
+        env:
+          TOOLSHED_API_KEY: ${{ secrets.TOOLSHED_API_KEY }}
+        run: |
+          planemo shed_upload \
+            --shed_target toolshed \
+            --shed_key "$TOOLSHED_API_KEY" \
+            beegees/galaxy/
