@@ -1,0 +1,496 @@
+<tool id="beegees" name="BeeGees" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="@PROFILE@">
+    <description>DNA barcoding from genome skims</description>
+
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+
+    <expand macro="requirements"/>
+
+    <!-- Galaxy manages its own job scheduling; always use the local profile -->
+    <command detect_errors="exit_code"><![CDATA[
+        python3 << PYEOF
+import csv
+
+## Load optional metadata (ID -> taxonomy dict)
+meta = {}
+#if $metadata
+with open('${metadata}', newline='') as f:
+    for row in csv.DictReader(f):
+        meta[row['ID']] = row
+#end if
+
+tax_cols = ['phylum', 'class', 'order', 'family', 'genus', 'species']
+
+#if $run_mode.mode == 'PE'
+base_cols = ['ID', 'R1', 'R2']
+rows = [
+  #for $el in $run_mode.reads
+  {'ID': '${el.name}', 'R1': '${el.forward}', 'R2': '${el.reverse}'},
+  #end for
+]
+#else
+base_cols = ['ID', 'R1']
+rows = [
+  #for $el in $run_mode.reads
+  {'ID': '${el.name}', 'R1': '${el}'},
+  #end for
+]
+#end if
+
+fieldnames = base_cols + (tax_cols if meta else [])
+with open('samples.csv', 'w', newline='') as out:
+    w = csv.DictWriter(out, fieldnames=fieldnames, extrasaction='ignore')
+    w.writeheader()
+    for row in rows:
+        if meta and row['ID'] in meta:
+            row.update({c: meta[row['ID']].get(c, '') for c in tax_cols})
+        w.writerow({k: row.get(k, '') for k in fieldnames})
+PYEOF
+        &&
+        beegees run
+            --config '$config_file'
+            --profile local
+            --cores \${GALAXY_SLOTS:-4}
+            #if $log_file
+            --log-file '$log_out'
+            #end if
+        &&
+        zip -rj '$plots_zip' beegees_output/05_barcoding_outcome/plots/
+    ]]></command>
+
+    <configfiles>
+        <configfile name="config_file"><![CDATA[
+run_name: "galaxy_run"
+samples_file: "./samples.csv"
+output_dir: "./beegees_output"
+
+#if $reference_source.ref_mode == "manual"
+sequence_reference_file: "${reference_source.sequence_reference_file}"
+#else:
+sequence_reference_file: ""
+#end if
+
+fastp:
+  adapter_r1: "${fastp.adapter_r1}"
+  adapter_r2: "${fastp.adapter_r2}"
+  extra_fastp_args: "${fastp.extra_fastp_args}"
+
+#if $reference_source.ref_mode == "gene_fetch"
+run_gene_fetch: true
+gene_fetch:
+  email: "${reference_source.gene_fetch.email}"
+  api_key: "${reference_source.gene_fetch.api_key}"
+  gene: "${reference_source.gene_fetch.gene}"
+  type: "${reference_source.gene_fetch.fetch_type}"
+  minimum_length: "${reference_source.gene_fetch.minimum_length}"
+  input_type: "${reference_source.gene_fetch.input_type}"
+  genbank: ${str(reference_source.gene_fetch.genbank).lower()}
+#else:
+run_gene_fetch: false
+#end if
+
+downsampling:
+#if $downsampling.enabled
+  enabled: true
+  max_reads: ${downsampling.max_reads}
+#else:
+  enabled: false
+  max_reads: 0
+#end if
+
+barcode_recovery:
+  r:
+#for $v in $barcode_recovery.r_values.split(',')
+    - ${v.strip()}
+#end for
+  s:
+#for $v in $barcode_recovery.s_values.split(',')
+    - ${v.strip()}
+#end for
+  n: ${barcode_recovery.n}
+  C: ${barcode_recovery.C}
+  t: ${barcode_recovery.t}
+
+fasta_cleaner:
+  consensus_threshold: ${fasta_cleaner.consensus_threshold}
+  human_threshold: ${fasta_cleaner.human_threshold}
+  at_difference: ${fasta_cleaner.at_difference}
+  at_mode: "${fasta_cleaner.at_mode}"
+  outlier_percentile: ${fasta_cleaner.outlier_percentile}
+#if $fasta_cleaner.reference_filter.use_ref_filter
+  reference_dir: "${fasta_cleaner.reference_filter.reference_dir}"
+  reference_filter_mode: "${fasta_cleaner.reference_filter.reference_filter_mode}"
+#else:
+  reference_dir: null
+  reference_filter_mode: "remove_similar"
+#end if
+
+structural_validation:
+  target: "${structural_validation.target}"
+  verbose: ${str(structural_validation.verbose).lower()}
+
+taxonomic_validation:
+#if $taxval.blast_db_source.source == "data_table"
+  blast_db: "${taxval.blast_db_source.blast_db.fields.path}"
+#else:
+  blast_db: "${taxval.blast_db_source.blast_db_file}"
+#end if
+#if $taxval.taxonomy_source.source == "data_table"
+  db_taxonomy: "${taxval.taxonomy_source.db_taxonomy.fields.path}"
+#else:
+  db_taxonomy: "${taxval.taxonomy_source.db_taxonomy_file}"
+#end if
+  taxval_rank: "${taxval.taxval_rank}"
+#if $taxval.expected_taxonomy
+  expected_taxonomy: "${taxval.expected_taxonomy}"
+#else:
+  expected_taxonomy: null
+#end if
+  verbose: ${str(taxval.verbose).lower()}
+  min_pident: ${taxval.min_pident}
+  min_length: ${taxval.min_length}
+
+#expand macro="rules_configfile_block"
+]]></configfile>
+    </configfiles>
+
+    <inputs>
+        <!-- ── Core inputs ── -->
+        <conditional name="run_mode">
+            <param name="mode" type="select" label="Sequencing mode">
+                <option value="PE" selected="true">Paired-end (R1 + R2)</option>
+                <option value="SE">Single-end (SE / Ultima)</option>
+            </param>
+            <when value="PE">
+                <param name="reads" type="data_collection" collection_type="list:paired"
+                       format="fastq,fastq.gz,fastqsanger,fastqsanger.gz"
+                       label="Paired-end reads (list:paired collection)"
+                       help="Build a list:paired collection from your history using the Rule Builder for large sample sets."/>
+            </when>
+            <when value="SE">
+                <param name="reads" type="data_collection" collection_type="list"
+                       format="fastq,fastq.gz,fastqsanger,fastqsanger.gz"
+                       label="Single-end reads (list collection)"/>
+            </when>
+        </conditional>
+
+        <param name="metadata" type="data" format="csv,tabular" optional="true"
+               label="Sample metadata CSV (optional)"
+               help="Columns: ID, phylum, class, order, family, genus, species. ID must match collection element identifiers exactly. Required when using gene-fetch with hierarchical input."/>
+
+        <param name="log_file" type="boolean" checked="false"
+               label="Save Snakemake log as output"/>
+
+        <!-- ── Reference source ── -->
+        <conditional name="reference_source">
+            <param name="ref_mode" type="select" label="Reference sequence source">
+                <option value="manual" selected="true">Provide reference CSV manually</option>
+                <option value="gene_fetch">Fetch from NCBI via gene-fetch</option>
+            </param>
+            <when value="gene_fetch">
+                <section name="gene_fetch" title="gene-fetch settings" expanded="true">
+                    <param name="email" type="text" label="NCBI e-mail address">
+                        <validator type="regex" message="Must be a valid e-mail address">[^@]+@[^@]+\.[^@]+</validator>
+                    </param>
+                    <param name="api_key" type="text" label="NCBI API key"
+                           help="Obtain from your NCBI account settings."/>
+                    <param name="gene" type="select" label="Target gene">
+                        <option value="coi" selected="true">COI / COX1</option>
+                        <option value="rbcl">rbcL</option>
+                        <option value="matk">matK</option>
+                    </param>
+                    <param name="fetch_type" type="select" label="Sequence type to fetch">
+                        <option value="both" selected="true">Both protein and nucleotide</option>
+                        <option value="protein">Protein only</option>
+                    </param>
+                    <param name="minimum_length" type="integer" value="500" min="1"
+                           label="Minimum protein reference length (aa)"/>
+                    <param name="input_type" type="select"
+                           label="Taxonomy input type in samples CSV">
+                        <option value="hierarchical" selected="true">Hierarchical columns (phylum / class / … / species)</option>
+                        <option value="taxid">Single taxid column</option>
+                    </param>
+                    <param name="genbank" type="boolean" checked="true"
+                           label="Download GenBank records for retrieved references"/>
+                </section>
+            </when>
+            <when value="manual">
+                <param name="sequence_reference_file" type="data" format="csv,tabular"
+                       label="Sequence references CSV"/>
+            </when>
+        </conditional>
+
+        <!-- ── fastp ── -->
+        <section name="fastp" title="fastp QC settings" expanded="false">
+            <param name="adapter_r1" type="text" value="" optional="true"
+                   label="R1 adapter sequence (PE; leave empty for Illumina default)"/>
+            <param name="adapter_r2" type="text" value="" optional="true"
+                   label="R2 adapter sequence (PE; leave empty for Illumina default)"/>
+            <param name="extra_fastp_args" type="text" value="" optional="true"
+                   label="Extra fastp arguments"/>
+        </section>
+
+        <!-- ── Downsampling ── -->
+        <conditional name="downsampling">
+            <param name="enabled" type="boolean" checked="false" label="Enable read downsampling"/>
+            <when value="true">
+                <param name="max_reads" type="integer" value="100000" min="1"
+                       label="Maximum read pairs to process"/>
+            </when>
+            <when value="false"/>
+        </conditional>
+
+        <!-- ── Barcode recovery ── -->
+        <section name="barcode_recovery" title="Barcode recovery (MitoGeneExtractor)" expanded="false">
+            <param name="r_values" type="select" multiple="true"
+                   label="Exonerate relative score thresholds (r)"
+                   help="Pipeline sweeps all selected values.">
+                <option value="1"   selected="true">1</option>
+                <option value="1.3" selected="true">1.3</option>
+                <option value="1.5" selected="true">1.5</option>
+            </param>
+            <param name="s_values" type="select" multiple="true"
+                   label="Exonerate minimum score thresholds (s)"
+                   help="Pipeline sweeps all selected values.">
+                <option value="50"  selected="true">50</option>
+                <option value="100" selected="true">100</option>
+            </param>
+            <param name="n" type="integer" value="0" min="0"
+                   label="bp to extend beyond Exonerate alignment (n)"/>
+            <param name="C" type="integer" value="5" min="1"
+                   label="Genetic code table (C)"
+                   help="NCBI genetic code number; 5 = invertebrate mitochondrial."/>
+            <param name="t" type="float" value="0.5" min="0.0" max="1.0"
+                   label="Consensus threshold (t)"/>
+        </section>
+
+        <!-- ── fasta_cleaner ── -->
+        <section name="fasta_cleaner" title="Sequence cleaning" expanded="false">
+            <param name="consensus_threshold" type="float" value="0.5" min="0.0" max="1.0"
+                   label="Consensus base agreement threshold"/>
+            <param name="human_threshold" type="float" value="0.95" min="0.0" max="1.0"
+                   label="Human COI similarity removal threshold"/>
+            <param name="at_difference" type="float" value="0.1" min="0.0" max="1.0"
+                   label="AT-content deviation threshold"/>
+            <param name="at_mode" type="select" label="AT-content filter mode">
+                <option value="absolute" selected="true">Absolute</option>
+                <option value="higher">Higher only</option>
+                <option value="lower">Lower only</option>
+            </param>
+            <param name="outlier_percentile" type="float" value="90.0" min="0.0" max="100.0"
+                   label="Statistical outlier percentile threshold"/>
+            <conditional name="reference_filter">
+                <param name="use_ref_filter" type="boolean" checked="false"
+                       label="Enable reference-based sequence filter (step 4)"/>
+                <when value="true">
+                    <param name="reference_dir" type="data" format="fasta"
+                           label="Reference FASTA for filtering"
+                           help="Single FASTA file used as the reference directory source."/>
+                    <param name="reference_filter_mode" type="select" label="Filter mode">
+                        <option value="remove_similar" selected="true">Remove similar to reference (contaminant removal)</option>
+                        <option value="keep_similar">Keep similar to reference (outlier removal)</option>
+                    </param>
+                </when>
+                <when value="false"/>
+            </conditional>
+        </section>
+
+        <!-- ── Structural validation ── -->
+        <section name="structural_validation" title="Structural validation" expanded="false">
+            <param name="target" type="select" label="Target gene for HMM validation">
+                <option value="cox1" selected="true">COX1 / COI</option>
+                <option value="rbcl">rbcL</option>
+            </param>
+            <param name="verbose" type="boolean" checked="false" label="Verbose logging"/>
+        </section>
+
+        <!-- ── Taxonomic validation ── -->
+        <section name="taxval" title="Taxonomic validation" expanded="true">
+            <!-- BLAST database source -->
+            <conditional name="blast_db_source">
+                <param name="source" type="select" label="BLAST database source">
+                    <option value="data_table" selected="true">Pre-installed database (data table)</option>
+                    <option value="history">Upload FASTA from history</option>
+                </param>
+                <when value="data_table">
+                    <param name="blast_db" type="select" label="BLAST database">
+                        <options from_data_table="blastdb">
+                            <filter type="sort_by" column="1"/>
+                            <validator type="no_options"
+                                       message="No BLAST databases are installed. Ask your Galaxy admin, or switch to 'Upload FASTA from history'."/>
+                        </options>
+                    </param>
+                </when>
+                <when value="history">
+                    <param name="blast_db_file" type="data" format="fasta"
+                           label="BLAST database FASTA file"
+                           help="Will be used directly as the BLASTn subject database."/>
+                </when>
+            </conditional>
+
+            <!-- Taxonomy TSV source -->
+            <conditional name="taxonomy_source">
+                <param name="source" type="select" label="Taxonomy TSV source">
+                    <option value="data_table" selected="true">Pre-installed taxonomy table</option>
+                    <option value="history">Upload TSV from history</option>
+                </param>
+                <when value="data_table">
+                    <param name="db_taxonomy" type="select" label="Taxonomy table">
+                        <options from_data_table="beegees_blast_taxonomy">
+                            <filter type="sort_by" column="1"/>
+                            <validator type="no_options"
+                                       message="No taxonomy tables are installed. Ask your Galaxy admin, or switch to 'Upload TSV from history'."/>
+                        </options>
+                    </param>
+                </when>
+                <when value="history">
+                    <param name="db_taxonomy_file" type="data" format="tabular,tsv"
+                           label="Taxonomy TSV"
+                           help="Must contain columns: ID, phylum, class, order, family, genus, species (tab-separated)."/>
+                </when>
+            </conditional>
+
+            <param name="taxval_rank" type="select" label="Validation taxonomic rank">
+                <option value="family" selected="true">Family (recommended)</option>
+                <option value="genus">Genus</option>
+                <option value="order">Order</option>
+                <option value="class">Class</option>
+                <option value="phylum">Phylum</option>
+                <option value="species">Species</option>
+            </param>
+            <param name="expected_taxonomy" type="data" format="csv,tabular" optional="true"
+                   label="Expected taxonomy CSV (optional)"
+                   help="Must contain columns: ID, phylum, class, order, family, genus, species."/>
+            <param name="verbose" type="boolean" checked="true" label="Verbose logging"/>
+            <param name="min_pident" type="integer" value="80" min="0" max="100"
+                   label="Minimum BLASTn percent identity"/>
+            <param name="min_length" type="integer" value="100" min="0"
+                   label="Minimum BLASTn alignment length"/>
+        </section>
+
+        <!-- ── Rule resources ── -->
+        <expand macro="rules_section"/>
+    </inputs>
+
+    <outputs>
+        <!-- Final summary outputs -->
+        <data name="final_metrics" format="csv"
+              label="${tool.name} on ${on_string}: final metrics"
+              from_work_dir="beegees_output/galaxy_run_final_metrics.csv"/>
+        <data name="barcoding_outcome" format="tabular"
+              label="${tool.name} on ${on_string}: barcoding outcome"
+              from_work_dir="beegees_output/05_barcoding_outcome/barcoding_outcome.tsv"/>
+
+        <!-- Consensus sequences -->
+        <data name="all_consensus" format="fasta"
+              label="${tool.name} on ${on_string}: all consensus sequences"
+              from_work_dir="beegees_output/03_barcode_recovery/galaxy_run_all_cons_combined.fasta"/>
+
+        <!-- Structural validation -->
+        <data name="structural_validated" format="fasta"
+              label="${tool.name} on ${on_string}: structurally validated barcodes"
+              from_work_dir="beegees_output/04_barcode_validation/structural/output_barcode_all_passing.fasta"/>
+        <data name="structural_validation_csv" format="csv"
+              label="${tool.name} on ${on_string}: structural validation metrics"
+              from_work_dir="beegees_output/04_barcode_validation/structural/structural_validation.csv"/>
+
+        <!-- Taxonomic validation -->
+        <data name="taxonomic_validated" format="fasta"
+              label="${tool.name} on ${on_string}: taxonomically validated barcodes"
+              from_work_dir="beegees_output/04_barcode_validation/taxonomic/validated_barcodes.fasta"/>
+        <data name="taxonomic_validation_csv" format="tabular"
+              label="${tool.name} on ${on_string}: taxonomic validation metrics"
+              from_work_dir="beegees_output/04_barcode_validation/taxonomic/metrics/02_taxonomic_validation.csv"/>
+
+        <!-- MultiQC report -->
+        <data name="multiqc_report" format="html"
+              label="${tool.name} on ${on_string}: MultiQC report"
+              from_work_dir="beegees_output/05_barcoding_outcome/multiqc_report/multiqc_report.html"/>
+
+        <!-- Diagnostic plots -->
+        <data name="plots_zip" format="zip"
+              label="${tool.name} on ${on_string}: diagnostic plots"/>
+
+        <!-- Optional Snakemake log -->
+        <data name="log_out" format="txt"
+              label="${tool.name} on ${on_string}: Snakemake log">
+            <filter>log_file</filter>
+        </data>
+    </outputs>
+
+    <help><![CDATA[
+**BeeGees** recovers DNA barcodes from low-coverage genome skim data.
+
+It wraps the following pipeline steps:
+
+1. **fastp** — adapter trimming and QC (paired-end merge + concat, or single-end)
+2. **gene-fetch** (optional) — downloads per-sample reference sequences from NCBI
+3. **MitoGeneExtractor** — protein-guided barcode extraction across an r×s parameter sweep
+4. **fasta_cleaner** — removes human contamination, AT outliers, statistical outliers, and optional custom-reference contaminants
+5. **Structural validation** — HMM + reading-frame + stop-codon checks
+6. **Taxonomic validation** — BLASTn against a local database with hierarchical taxonomic matching
+7. **MultiQC** — aggregated QC report
+
+**Samples CSV format** (``.csv``, comma-separated)
+
+.. warning::
+
+   Sample IDs must **not contain underscores**. The pipeline uses ``_`` as an
+   internal delimiter to separate sample IDs from parameter suffixes in
+   output filenames. Use hyphens (``-``) instead (e.g. ``sample-001``).
+
+For paired-end runs supply columns ``ID``, ``R1``, ``R2`` (and optionally taxonomy columns).
+For single-end runs omit ``R2``. When using ``gene-fetch`` with ``input_type=hierarchical``,
+include the taxonomy columns shown below.
+
+*Paired-end example*:
+
+.. csv-table::
+   :header: ID,R1,R2,phylum,class,order,family,genus,species
+
+   sample-001,/data/s001-R1.fastq.gz,/data/s001-R2.fastq.gz,Arthropoda,Insecta,Coleoptera,Carabidae,Carabus,Carabus coriaceus
+   sample-002,/data/s002-R1.fastq.gz,/data/s002-R2.fastq.gz,Arthropoda,Insecta,Lepidoptera,Nymphalidae,Vanessa,Vanessa atalanta
+   sample-003,/data/s003-R1.fastq.gz,/data/s003-R2.fastq.gz,Arthropoda,Insecta,Diptera,Drosophilidae,Drosophila,Drosophila melanogaster
+
+*Single-end (SE / Ultima) example*:
+
+.. csv-table::
+   :header: ID,R1,phylum,class,order,family,genus,species
+
+   sample-001,/data/s001.fastq.gz,Arthropoda,Insecta,Coleoptera,Carabidae,Carabus,Carabus coriaceus
+   sample-002,/data/s002.fastq.gz,Arthropoda,Insecta,Lepidoptera,Nymphalidae,Vanessa,Vanessa atalanta
+   sample-003,/data/s003.fastq.gz,Arthropoda,Insecta,Diptera,Drosophilidae,Drosophila,Drosophila melanogaster
+
+----
+
+**BLAST database**
+
+Select a database pre-installed by your Galaxy admin, or upload a FASTA file from your history
+(the pipeline will build the BLAST index automatically). The sequence IDs in the database must
+match those in the taxonomy TSV below.
+
+See `docs/README_custom_blast_dbs.md <https://github.com/bge-barcoding/BeeGees/blob/main/docs/README_custom_blast_dbs.md>`_
+for instructions on building a custom database.
+
+**Taxonomy TSV** (``.tsv``, tab-separated)
+
+Two formats are accepted — see the
+`custom BLAST DB docs <https://github.com/bge-barcoding/BeeGees/blob/main/docs/README_custom_blast_dbs.md#taxonomy-tsv-file-formats>`_
+for full details.
+
+*Format A — generic (``Feature ID`` + semicolon-delimited lineage)*::
+
+    Feature ID	Taxon
+    MH021436.1	k__Viridiplantae;p__Streptophyta;c__Magnoliopsida;o__Solanales;f__Solanaceae;g__Solanum;s__Solanum bukasovii
+
+*Format B — BOLDistilled-style (one column per rank)*::
+
+    bin	kingdom	phylum	class	order	family	genus	species
+    MH021436.1	Viridiplantae	Streptophyta	Magnoliopsida	Solanales	Solanaceae	Solanum	Solanum bukasovii
+
+The sequence ID in the taxonomy file must exactly match the hit ID returned by BLAST (``sseqid``).
+    ]]></help>
+
+    <expand macro="citations"/>
+</tool>
