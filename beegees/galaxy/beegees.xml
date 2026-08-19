@@ -9,47 +9,75 @@
 
     <!-- Galaxy manages its own job scheduling; always use the local profile -->
     <command detect_errors="exit_code"><![CDATA[
-        python3 << PYEOF
-import csv
-
-## Load optional metadata (ID -> taxonomy dict)
-meta = {}
-#if $metadata
-with open('${metadata}', newline='') as f:
-    for row in csv.DictReader(f):
-        meta[row['ID']] = row
-#end if
-
-tax_cols = ['phylum', 'class', 'order', 'family', 'genus', 'species']
-
-#if $run_mode.mode == 'PE'
-base_cols = ['ID', 'R1', 'R2']
-rows = [
-  #for $el in $run_mode.reads
-  {'ID': '${el.name}', 'R1': '${el.forward}', 'R2': '${el.reverse}'},
-  #end for
-]
-#else
-base_cols = ['ID', 'R1']
-rows = [
-  #for $el in $run_mode.reads
-  {'ID': '${el.name}', 'R1': '${el}'},
-  #end for
-]
-#end if
-
-fieldnames = base_cols + (tax_cols if meta else [])
-with open('samples.csv', 'w', newline='') as out:
-    w = csv.DictWriter(out, fieldnames=fieldnames, extrasaction='ignore')
-    w.writeheader()
-    for row in rows:
-        if meta and row['ID'] in meta:
-            row.update({c: meta[row['ID']].get(c, '') for c in tax_cols})
-        w.writerow({k: row.get(k, '') for k in fieldnames})
-PYEOF
+        python3 '${__tool_directory__}/build_samples_csv.py'
+            --samples-csv '$samples_file'
+            --output samples.csv
+            --collection-names #for $el in $reads# '${el.name}' #end for#
+            --collection-paths #for $el in $reads# '${el}' #end for#
+        &&
+        python3 '${__tool_directory__}/build_config_yaml.py'
+            --output config.yaml
+            --ref-mode '$reference_source.ref_mode'
+            #if $reference_source.ref_mode == 'manual'
+            --sequence-reference-file '$reference_source.sequence_reference_file'
+            #else
+            --gf-email '$reference_source.gene_fetch.email'
+            --gf-api-key '$reference_source.gene_fetch.api_key'
+            --gf-gene '$reference_source.gene_fetch.gene'
+            --gf-type '$reference_source.gene_fetch.fetch_type'
+            --gf-minimum-length '$reference_source.gene_fetch.minimum_length'
+            --gf-input-type '$reference_source.gene_fetch.input_type'
+            #if $reference_source.gene_fetch.genbank
+            --gf-genbank
+            #end if
+            #end if
+            --fastp-adapter-r1 '$fastp.adapter_r1'
+            --fastp-adapter-r2 '$fastp.adapter_r2'
+            --fastp-extra-args '$fastp.extra_fastp_args'
+            #if $downsampling.enabled
+            --downsampling-enabled
+            --downsampling-max-reads '$downsampling.max_reads'
+            #end if
+            --br-r #for $v in $barcode_recovery.r_values.split(',')# '${v.strip()}' #end for#
+            --br-s #for $v in $barcode_recovery.s_values.split(',')# '${v.strip()}' #end for#
+            --br-n '$barcode_recovery.n'
+            --br-C '$barcode_recovery.C'
+            --br-t '$barcode_recovery.t'
+            --fc-consensus-threshold '$fasta_cleaner.consensus_threshold'
+            --fc-human-threshold '$fasta_cleaner.human_threshold'
+            --fc-at-difference '$fasta_cleaner.at_difference'
+            --fc-at-mode '$fasta_cleaner.at_mode'
+            --fc-outlier-percentile '$fasta_cleaner.outlier_percentile'
+            #if $fasta_cleaner.reference_filter.use_ref_filter
+            --fc-reference-dir '$fasta_cleaner.reference_filter.reference_dir'
+            --fc-reference-filter-mode '$fasta_cleaner.reference_filter.reference_filter_mode'
+            #end if
+            --sv-target '$structural_validation.target'
+            #if $structural_validation.verbose
+            --sv-verbose
+            #end if
+            #if $taxval.blast_db_source.source == 'data_table'
+            --tv-blast-db '$taxval.blast_db_source.blast_db.fields.path'
+            #else
+            --tv-blast-db '$taxval.blast_db_source.blast_db_file'
+            #end if
+            #if $taxval.taxonomy_source.source == 'data_table'
+            --tv-db-taxonomy '$taxval.taxonomy_source.db_taxonomy.fields.path'
+            #else
+            --tv-db-taxonomy '$taxval.taxonomy_source.db_taxonomy_file'
+            #end if
+            --tv-taxval-rank '$taxval.taxval_rank'
+            #if $taxval.expected_taxonomy
+            --tv-expected-taxonomy '$taxval.expected_taxonomy'
+            #end if
+            #if $taxval.verbose
+            --tv-verbose
+            #end if
+            --tv-min-pident '$taxval.min_pident'
+            --tv-min-length '$taxval.min_length'
         &&
         beegees run
-            --config '$config_file'
+            --config config.yaml
             --profile local
             --cores \${GALAXY_SLOTS:-4}
             #if $log_file
@@ -58,102 +86,6 @@ PYEOF
         &&
         zip -rj '$plots_zip' beegees_output/05_barcoding_outcome/plots/
     ]]></command>
-
-    <configfiles>
-        <configfile name="config_file"><![CDATA[
-run_name: "galaxy_run"
-samples_file: "./samples.csv"
-output_dir: "./beegees_output"
-
-#if $reference_source.ref_mode == "manual"
-sequence_reference_file: "${reference_source.sequence_reference_file}"
-#else:
-sequence_reference_file: ""
-#end if
-
-fastp:
-  adapter_r1: "${fastp.adapter_r1}"
-  adapter_r2: "${fastp.adapter_r2}"
-  extra_fastp_args: "${fastp.extra_fastp_args}"
-
-#if $reference_source.ref_mode == "gene_fetch"
-run_gene_fetch: true
-gene_fetch:
-  email: "${reference_source.gene_fetch.email}"
-  api_key: "${reference_source.gene_fetch.api_key}"
-  gene: "${reference_source.gene_fetch.gene}"
-  type: "${reference_source.gene_fetch.fetch_type}"
-  minimum_length: "${reference_source.gene_fetch.minimum_length}"
-  input_type: "${reference_source.gene_fetch.input_type}"
-  genbank: ${str(reference_source.gene_fetch.genbank).lower()}
-#else:
-run_gene_fetch: false
-#end if
-
-downsampling:
-#if $downsampling.enabled
-  enabled: true
-  max_reads: ${downsampling.max_reads}
-#else:
-  enabled: false
-  max_reads: 0
-#end if
-
-barcode_recovery:
-  r:
-#for $v in $barcode_recovery.r_values.split(',')
-    - ${v.strip()}
-#end for
-  s:
-#for $v in $barcode_recovery.s_values.split(',')
-    - ${v.strip()}
-#end for
-  n: ${barcode_recovery.n}
-  C: ${barcode_recovery.C}
-  t: ${barcode_recovery.t}
-
-fasta_cleaner:
-  consensus_threshold: ${fasta_cleaner.consensus_threshold}
-  human_threshold: ${fasta_cleaner.human_threshold}
-  at_difference: ${fasta_cleaner.at_difference}
-  at_mode: "${fasta_cleaner.at_mode}"
-  outlier_percentile: ${fasta_cleaner.outlier_percentile}
-#if $fasta_cleaner.reference_filter.use_ref_filter
-  reference_dir: "${fasta_cleaner.reference_filter.reference_dir}"
-  reference_filter_mode: "${fasta_cleaner.reference_filter.reference_filter_mode}"
-#else:
-  reference_dir: null
-  reference_filter_mode: "remove_similar"
-#end if
-
-structural_validation:
-  target: "${structural_validation.target}"
-  verbose: ${str(structural_validation.verbose).lower()}
-
-taxonomic_validation:
-#if $taxval.blast_db_source.source == "data_table"
-  blast_db: "${taxval.blast_db_source.blast_db.fields.path}"
-#else:
-  blast_db: "${taxval.blast_db_source.blast_db_file}"
-#end if
-#if $taxval.taxonomy_source.source == "data_table"
-  db_taxonomy: "${taxval.taxonomy_source.db_taxonomy.fields.path}"
-#else:
-  db_taxonomy: "${taxval.taxonomy_source.db_taxonomy_file}"
-#end if
-  taxval_rank: "${taxval.taxval_rank}"
-#if $taxval.expected_taxonomy
-  expected_taxonomy: "${taxval.expected_taxonomy}"
-#else:
-  expected_taxonomy: null
-#end if
-  verbose: ${str(taxval.verbose).lower()}
-  min_pident: ${taxval.min_pident}
-  min_length: ${taxval.min_length}
-
-#expand macro="rules_configfile_block"
-]]></configfile>
-    </configfiles>
 
     <inputs>
         <!-- ── Core inputs ── -->
@@ -369,8 +301,6 @@ taxonomic_validation:
                    label="Minimum BLASTn alignment length"/>
         </section>
 
-        <!-- ── Rule resources ── -->
-        <expand macro="rules_section"/>
     </inputs>
 
     <outputs>
@@ -432,35 +362,25 @@ It wraps the following pipeline steps:
 6. **Taxonomic validation** — BLASTn against a local database with hierarchical taxonomic matching
 7. **MultiQC** — aggregated QC report
 
-**Samples CSV format** (``.csv``, comma-separated)
+**Samples CSV** (the file you upload)
 
 .. warning::
 
-   Sample IDs must **not contain underscores**. The pipeline uses ``_`` as an
-   internal delimiter to separate sample IDs from parameter suffixes in
-   output filenames. Use hyphens (``-``) instead (e.g. ``sample-001``).
+   Sample IDs must **not contain underscores**. Use hyphens instead (e.g. ``sample-001``).
 
-For paired-end runs supply columns ``ID``, ``R1``, ``R2`` (and optionally taxonomy columns).
-For single-end runs omit ``R2``. When using ``gene-fetch`` with ``input_type=hierarchical``,
-include the taxonomy columns shown below.
+Provide a CSV with the following exact column names. ``forward`` and ``reverse`` are
+bare filenames — the wrapper resolves them to absolute paths from the FASTQ collection.
+PE/SE mode is auto-detected: include ``reverse`` for paired-end, omit it for single-end.
+
 
 *Paired-end example*:
 
 .. csv-table::
-   :header: ID,R1,R2,phylum,class,order,family,genus,species
+   :header: ID,forward,reverse,phylum,class,order,family,genus,species
 
-   sample-001,/data/s001-R1.fastq.gz,/data/s001-R2.fastq.gz,Arthropoda,Insecta,Coleoptera,Carabidae,Carabus,Carabus coriaceus
-   sample-002,/data/s002-R1.fastq.gz,/data/s002-R2.fastq.gz,Arthropoda,Insecta,Lepidoptera,Nymphalidae,Vanessa,Vanessa atalanta
-   sample-003,/data/s003-R1.fastq.gz,/data/s003-R2.fastq.gz,Arthropoda,Insecta,Diptera,Drosophilidae,Drosophila,Drosophila melanogaster
-
-*Single-end (SE / Ultima) example*:
-
-.. csv-table::
-   :header: ID,R1,phylum,class,order,family,genus,species
-
-   sample-001,/data/s001.fastq.gz,Arthropoda,Insecta,Coleoptera,Carabidae,Carabus,Carabus coriaceus
-   sample-002,/data/s002.fastq.gz,Arthropoda,Insecta,Lepidoptera,Nymphalidae,Vanessa,Vanessa atalanta
-   sample-003,/data/s003.fastq.gz,Arthropoda,Insecta,Diptera,Drosophilidae,Drosophila,Drosophila melanogaster
+   sample-001,sample-001-R1.fastq.gz,sample-001-R2.fastq.gz,Arthropoda,Insecta,Coleoptera,Carabidae,Carabus,Carabus coriaceus
+   sample-002,sample-002-R1.fastq.gz,sample-002-R2.fastq.gz,Arthropoda,Insecta,Lepidoptera,Nymphalidae,Vanessa,Vanessa atalanta
+   sample-003,sample-003-R1.fastq.gz,sample-003-R2.fastq.gz,Arthropoda,Insecta,Diptera,Drosophilidae,Drosophila,Drosophila melanogaster
 
 ----
 
