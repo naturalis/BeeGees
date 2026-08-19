@@ -89,27 +89,14 @@
 
     <inputs>
         <!-- ── Core inputs ── -->
-        <conditional name="run_mode">
-            <param name="mode" type="select" label="Sequencing mode">
-                <option value="PE" selected="true">Paired-end (R1 + R2)</option>
-                <option value="SE">Single-end (SE / Ultima)</option>
-            </param>
-            <when value="PE">
-                <param name="reads" type="data_collection" collection_type="list:paired"
-                       format="fastq,fastq.gz,fastqsanger,fastqsanger.gz"
-                       label="Paired-end reads (list:paired collection)"
-                       help="Build a list:paired collection from your history using the Rule Builder for large sample sets."/>
-            </when>
-            <when value="SE">
-                <param name="reads" type="data_collection" collection_type="list"
-                       format="fastq,fastq.gz,fastqsanger,fastqsanger.gz"
-                       label="Single-end reads (list collection)"/>
-            </when>
-        </conditional>
+        <param name="samples_file" type="data" format="csv,tabular"
+               label="Samples CSV"
+               help="Columns: ID, forward, [reverse], and optionally phylum/class/order/family/genus/species. forward/reverse are bare filenames matching files in the FASTQ collection below."/>
 
-        <param name="metadata" type="data" format="csv,tabular" optional="true"
-               label="Sample metadata CSV (optional)"
-               help="Columns: ID, phylum, class, order, family, genus, species. ID must match collection element identifiers exactly. Required when using gene-fetch with hierarchical input."/>
+        <param name="reads" type="data_collection" collection_type="list"
+               format="fastq,fastq.gz,fastqsanger,fastqsanger.gz"
+               label="FASTQ collection (all reads, flat list)"
+               help="Upload all your FASTQ files as a flat list collection. The wrapper matches filenames from the samples CSV to files in this collection."/>
 
         <param name="log_file" type="boolean" checked="false"
                label="Save Snakemake log as output"/>
