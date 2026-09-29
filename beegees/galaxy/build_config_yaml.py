@@ -8,6 +8,7 @@ Usage:
 """
 
 import argparse
+import glob
 import os
 import sys
 import yaml
@@ -16,6 +17,23 @@ import yaml
 def err(stage, msg):
     print(f'[build_config_yaml] ERROR ({stage}): {msg}', file=sys.stderr)
     sys.exit(1)
+
+
+def stage_blast_prefix(prefix, stage_dir='blast_db'):
+    """Link a pre-built BLAST database, given as a name prefix, into stage_dir and return a path that exists."""
+    files = glob.glob(glob.escape(prefix) + '.*')
+    if not files:
+        err('taxonomic validation', f'BLAST database not found: no files match {prefix}.*')
+    os.makedirs(stage_dir, exist_ok=True)
+    for f in files:
+        link = os.path.join(stage_dir, os.path.basename(f))
+        if not os.path.lexists(link):
+            os.symlink(f, link)
+    # The pipeline checks os.path.exists(blast_db); BLAST itself ignores this file and reads <name>.n*
+    placeholder = os.path.join(stage_dir, os.path.basename(prefix))
+    open(placeholder, 'a').close()
+    print(f'[build_config_yaml] linked {len(files)} BLAST database file(s) from {prefix} into {stage_dir}/')
+    return placeholder
 
 
 def validate(args):
@@ -53,7 +71,8 @@ def validate(args):
 
     # ── Stage 6: taxonomic validation ──
     if not os.path.exists(args.tv_blast_db):
-        err('taxonomic validation', f'BLAST database path not found: {args.tv_blast_db}')
+        # Pre-installed databases (blastdb data table) are a name prefix, not a file
+        args.tv_blast_db = stage_blast_prefix(args.tv_blast_db)
     if not os.path.isfile(args.tv_db_taxonomy):
         err('taxonomic validation', f'Taxonomy TSV not found: {args.tv_db_taxonomy}')
     if not 0 <= args.tv_min_pident <= 100:
@@ -186,7 +205,7 @@ def build_config(args):
             'verbose': args.sv_verbose,
         },
         'taxonomic_validation': {
-            'blast_db':           args.tv_blast_db,
+            'blast_db':           os.path.abspath(args.tv_blast_db),
             'db_taxonomy':        args.tv_db_taxonomy,
             'taxval_rank':        args.tv_taxval_rank,
             'expected_taxonomy':  samples_file,

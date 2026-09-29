@@ -25,6 +25,10 @@
         || { echo '[BeeGees] FAILED at step 1/4 (build_samples_csv.py): check the samples CSV, references CSV and collection element names' >&2; exit 1; };
 
         echo '[BeeGees] Step 2/4: building config.yaml' &&
+        #if $taxval.blast_db_source.source == 'history'
+        ## tv_local_blast.py only runs makeblastdb for .fasta/.fa/.fas, and writes the index next to the file
+        mkdir -p blast_db && ln -sf '$taxval.blast_db_source.blast_db_file' blast_db/blast_db.fasta &&
+        #end if
         python3 '${__tool_directory__}/build_config_yaml.py'
             --output config.yaml
             --ref-mode '$reference_source.ref_mode'
@@ -69,7 +73,7 @@
             #if $taxval.blast_db_source.source == 'data_table'
             --tv-blast-db '$taxval.blast_db_source.blast_db.fields.path'
             #else
-            --tv-blast-db '$taxval.blast_db_source.blast_db_file'
+            --tv-blast-db blast_db/blast_db.fasta
             #end if
             #if $taxval.taxonomy_source.source == 'data_table'
             --tv-db-taxonomy '$taxval.taxonomy_source.db_taxonomy.fields.path'
