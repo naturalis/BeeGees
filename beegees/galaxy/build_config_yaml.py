@@ -56,8 +56,6 @@ def validate(args):
         err('taxonomic validation', f'BLAST database path not found: {args.tv_blast_db}')
     if not os.path.isfile(args.tv_db_taxonomy):
         err('taxonomic validation', f'Taxonomy TSV not found: {args.tv_db_taxonomy}')
-    if args.tv_expected_taxonomy and not os.path.isfile(args.tv_expected_taxonomy):
-        err('taxonomic validation', f'Expected taxonomy file not found: {args.tv_expected_taxonomy}')
     if not 0 <= args.tv_min_pident <= 100:
         err('taxonomic validation', f'--tv-min-pident must be 0-100, got {args.tv_min_pident}')
 
@@ -142,7 +140,6 @@ def parse_args():
     p.add_argument('--tv-blast-db',          required=True)
     p.add_argument('--tv-db-taxonomy',       required=True)
     p.add_argument('--tv-taxval-rank',       default='family')
-    p.add_argument('--tv-expected-taxonomy', default=None)
     p.add_argument('--tv-verbose',           action='store_true')
     p.add_argument('--tv-min-pident',        type=int, default=80)
     p.add_argument('--tv-min-length',        type=int, default=100)
@@ -190,7 +187,7 @@ def build_config(args):
             'blast_db':           args.tv_blast_db,
             'db_taxonomy':        args.tv_db_taxonomy,
             'taxval_rank':        args.tv_taxval_rank,
-            'expected_taxonomy':  args.tv_expected_taxonomy,
+            'expected_taxonomy':  args.samples_file,
             'verbose':            args.tv_verbose,
             'min_pident':         args.tv_min_pident,
             'min_length':         args.tv_min_length,

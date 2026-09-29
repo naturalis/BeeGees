@@ -130,7 +130,10 @@ def main():
                 rev_col = found
                 break
 
-        tax_present = [c for c in TAX_COLS if c in fieldnames]
+        tax_missing = [c for c in TAX_COLS if c not in fieldnames]
+        if tax_missing:
+            err('columns', 'Missing taxonomy column(s) (used as expected taxonomy): '
+                f'{", ".join(tax_missing)}\n  Found: {", ".join(fieldnames)}')
         rows = list(reader)
 
     # ── Stage 4: sample ID validation ──
@@ -172,12 +175,12 @@ def main():
         }
         if rev_col:
             out['reverse'] = resolve(r.get(rev_col, ''), f"sample {r[col['ID']]} reverse")
-        for tc in tax_present:
+        for tc in TAX_COLS:
             out[tc] = r.get(tc, '')
         out_rows.append(out)
 
     # ── Stage 6: write output ──
-    out_cols = ['ID', 'forward'] + (['reverse'] if rev_col else []) + tax_present
+    out_cols = ['ID', 'forward'] + (['reverse'] if rev_col else []) + TAX_COLS
     try:
         with open(args.output, 'w', newline='') as f:
             w = csv.DictWriter(f, fieldnames=out_cols)

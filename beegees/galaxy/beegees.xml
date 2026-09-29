@@ -71,9 +71,6 @@
             --tv-db-taxonomy '$taxval.taxonomy_source.db_taxonomy_file'
             #end if
             --tv-taxval-rank '$taxval.taxval_rank'
-            #if $taxval.expected_taxonomy
-            --tv-expected-taxonomy '$taxval.expected_taxonomy'
-            #end if
             #if $taxval.verbose
             --tv-verbose
             #end if
@@ -100,7 +97,7 @@
         <!-- ── Core inputs ── -->
         <param name="samples_file" type="data" format="csv,tabular"
                label="Samples CSV"
-               help="Columns: ID, forward, [reverse], and optionally phylum/class/order/family/genus/species. forward/reverse are bare filenames matching files in the FASTQ collection below."/>
+               help="Columns: ID, forward, [reverse], phylum, class, order, family, genus, species. forward/reverse are bare filenames matching files in the FASTQ collection below. The taxonomy columns are used as the expected taxonomy for taxonomic validation."/>
 
         <param name="reads" type="data_collection" collection_type="list"
                format="fastq,fastq.gz,fastqsanger,fastqsanger.gz"
@@ -292,9 +289,6 @@
                 <option value="phylum">Phylum</option>
                 <option value="species">Species</option>
             </param>
-            <param name="expected_taxonomy" type="data" format="csv,tabular" optional="true"
-                   label="Expected taxonomy CSV (optional)"
-                   help="Must contain columns: ID, phylum, class, order, family, genus, species."/>
             <param name="verbose" type="boolean" checked="true" label="Verbose logging"/>
             <param name="min_pident" type="integer" value="80" min="0" max="100"
                    label="Minimum BLASTn percent identity"/>
@@ -372,6 +366,8 @@ It wraps the following pipeline steps:
 Provide a CSV with the following exact column names. ``forward`` and ``reverse`` are
 bare filenames — the wrapper resolves them to absolute paths from the FASTQ collection.
 PE/SE mode is auto-detected: include ``reverse`` for paired-end, omit it for single-end.
+The taxonomy columns (``phylum`` to ``species``) are required and serve as the expected taxonomy
+for taxonomic validation.
 
 
 *Paired-end example*:
