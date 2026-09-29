@@ -16,14 +16,20 @@
             --output samples.csv
             --collection-names #for $el in $reads# '${el.element_identifier}' #end for#
             --collection-paths #for $el in $reads# '${el}' #end for#
-        || { echo '[BeeGees] FAILED at step 1/4 (build_samples_csv.py): check the samples CSV and collection element names' >&2; exit 1; };
+            #if $reference_source.ref_mode == 'manual'
+            --refs-csv '$reference_source.sequence_reference_file'
+            --refs-output sequence_references.csv
+            --ref-names #for $el in $reference_source.protein_references# '${el.element_identifier}' #end for#
+            --ref-paths #for $el in $reference_source.protein_references# '${el}' #end for#
+            #end if
+        || { echo '[BeeGees] FAILED at step 1/4 (build_samples_csv.py): check the samples CSV, references CSV and collection element names' >&2; exit 1; };
 
         echo '[BeeGees] Step 2/4: building config.yaml' &&
         python3 '${__tool_directory__}/build_config_yaml.py'
             --output config.yaml
             --ref-mode '$reference_source.ref_mode'
             #if $reference_source.ref_mode == 'manual'
-            --sequence-reference-file '$reference_source.sequence_reference_file'
+            --sequence-reference-file sequence_references.csv
             #else
             --gf-email '$reference_source.gene_fetch.email'
             --gf-api-key '$reference_source.gene_fetch.api_key'
@@ -147,7 +153,12 @@
             </when>
             <when value="manual">
                 <param name="sequence_reference_file" type="data" format="csv,tabular"
-                       label="Sequence references CSV"/>
+                       label="Sequence references CSV"
+                       help="Columns: ID, protein_reference_path. protein_reference_path is a bare filename matching a file in the protein reference collection below. Every sample ID needs a row."/>
+                <param name="protein_references" type="data_collection" collection_type="list"
+                       format="fasta"
+                       label="Protein reference FASTA collection (flat list)"
+                       help="Upload the protein reference FASTA files as a flat list collection. The wrapper matches filenames from the references CSV to files in this collection."/>
             </when>
         </conditional>
 

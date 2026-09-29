@@ -12,6 +12,9 @@ Usage:
         --collection-names  name1 name2 ...
         --collection-paths  /abs/path1 /abs/path2 ...
         [--reads-dir   reads]
+        [--refs-csv    /path/to/user_sequence_references.csv
+         --ref-names   name1 ...  --ref-paths  /abs/path1 ...
+         --refs-output sequence_references.csv  --refs-dir  references]
 """
 
 import argparse
@@ -66,24 +69,86 @@ def link_read(filename, target, reads_dir):
 
 
 FASTQ_EXTS = ('.fastqsanger', '.fastq', '.fq')
+FASTA_EXTS = ('.fasta', '.fas', '.faa', '.fa')
+REF_COLS = ['ID', 'protein_reference_path']
 
 
-def strip_fastq_ext(name):
+def strip_ext(name, exts):
     if name.endswith('.gz'):
         name = name[:-3]
-    for ext in FASTQ_EXTS:
+    for ext in exts:
         if name.endswith(ext):
             return name[:-len(ext)]
     return name
 
 
-def build_path_map(names, paths):
+def build_path_map(names, paths, exts):
     """Map collection element names, and their extension-less stems, to dataset paths."""
     exact = dict(zip(names, paths))
     stems = {}
     for name, path in exact.items():
-        stems.setdefault(strip_fastq_ext(name), []).append(path)
+        stems.setdefault(strip_ext(name, exts), []).append(path)
     return exact, stems
+
+
+def resolve_file(filename, label, path_map, stem_map, exts, link_dir, collection):
+    """Find filename in a collection and return a symlink to it under link_dir."""
+    if filename in path_map:
+        return link_read(filename, path_map[filename], link_dir)
+    # Galaxy collections often drop extensions (test_R1 vs test_R1.fastq.gz)
+    candidates = stem_map.get(strip_ext(filename, exts), [])
+    if len(candidates) == 1:
+        return link_read(filename, candidates[0], link_dir)
+    if len(candidates) > 1:
+        err('file resolution',
+            f'{label}: "{filename}" matches more than one element of the {collection} collection; '
+            'make the collection element names unique.')
+    err('file resolution',
+        f'{label}: "{filename}" not found in the {collection} collection.\n'
+        f'  Available: {", ".join(sorted(path_map))}')
+
+
+def resolve_references(args, sample_ids):
+    """Write a sequence references CSV whose protein_reference_path points to collection datasets."""
+    if len(args.ref_names) != len(args.ref_paths):
+        err('references',
+            f'--ref-names ({len(args.ref_names)}) and '
+            f'--ref-paths ({len(args.ref_paths)}) have different counts')
+    path_map, stem_map = build_path_map(args.ref_names, args.ref_paths, FASTA_EXTS)
+
+    if not os.path.isfile(args.refs_csv):
+        err('references', f'File not found: {args.refs_csv}')
+    with open(args.refs_csv, newline='') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+        missing = [c for c in REF_COLS if c not in fieldnames]
+        if missing:
+            err('references', f'Missing column(s) in sequence references CSV: {", ".join(missing)}'
+                f'\n  Found: {", ".join(fieldnames)}')
+        rows = {r['ID']: r for r in reader}
+
+    no_ref = [i for i in sample_ids if not rows.get(i, {}).get('protein_reference_path')]
+    if no_ref:
+        err('references', f'No protein_reference_path given for sample(s): {", ".join(no_ref)}')
+
+    os.makedirs(args.refs_dir, exist_ok=True)
+    out_rows = []
+    for sid in sample_ids:
+        r = dict(rows[sid])
+        r['protein_reference_path'] = resolve_file(
+            r['protein_reference_path'], f'sample {sid} protein reference',
+            path_map, stem_map, FASTA_EXTS, args.refs_dir, 'protein reference')
+        out_rows.append(r)
+
+    try:
+        with open(args.refs_output, 'w', newline='') as f:
+            w = csv.DictWriter(f, fieldnames=fieldnames)
+            w.writeheader()
+            w.writerows(out_rows)
+    except OSError as e:
+        err('references', f'Could not write {args.refs_output}: {e}')
+
+    print(f'[build_samples_csv] resolved {len(out_rows)} protein reference(s) to {args.refs_output}')
 
 
 def main():
@@ -93,6 +158,12 @@ def main():
     parser.add_argument('--collection-names',  nargs='*', default=[])
     parser.add_argument('--collection-paths',  nargs='*', default=[])
     parser.add_argument('--reads-dir',         default='reads')
+    # Manual reference mode: references CSV + protein FASTA collection
+    parser.add_argument('--refs-csv',          default=None)
+    parser.add_argument('--refs-output',       default='sequence_references.csv')
+    parser.add_argument('--ref-names',         nargs='*', default=[])
+    parser.add_argument('--ref-paths',         nargs='*', default=[])
+    parser.add_argument('--refs-dir',          default='references')
     args = parser.parse_args()
 
     # ── Stage 1: input file exists ──
@@ -104,7 +175,7 @@ def main():
         err('collection',
             f'--collection-names ({len(args.collection_names)}) and '
             f'--collection-paths ({len(args.collection_paths)}) have different counts')
-    path_map, stem_map = build_path_map(args.collection_names, args.collection_paths)
+    path_map, stem_map = build_path_map(args.collection_names, args.collection_paths, FASTQ_EXTS)
 
     # ── Stage 3: parse and validate CSV columns ──
     with open(args.samples_csv, newline='') as f:
@@ -153,19 +224,7 @@ def main():
     def resolve(filename, label):
         if not filename:
             return ''
-        if filename in path_map:
-            return link_read(filename, path_map[filename], args.reads_dir)
-        # Galaxy collections often drop extensions (test_R1 vs test_R1.fastq.gz)
-        candidates = stem_map.get(strip_fastq_ext(filename), [])
-        if len(candidates) == 1:
-            return link_read(filename, candidates[0], args.reads_dir)
-        if len(candidates) > 1:
-            err('file resolution',
-                f'{label}: "{filename}" matches more than one collection element; '
-                'make the collection element names unique.')
-        err('file resolution',
-            f'{label}: "{filename}" not found in the collection.\n'
-            f'  Available: {", ".join(sorted(path_map))}')
+        return resolve_file(filename, label, path_map, stem_map, FASTQ_EXTS, args.reads_dir, 'FASTQ')
 
     out_rows = []
     for r in rows:
@@ -190,6 +249,9 @@ def main():
         err('output', f'Could not write {args.output}: {e}')
 
     print(f'[build_samples_csv] resolved {len(out_rows)} sample(s) to {args.output}')
+
+    if args.refs_csv:
+        resolve_references(args, ids)
 
 
 if __name__ == '__main__':
