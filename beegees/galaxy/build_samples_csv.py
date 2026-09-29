@@ -11,6 +11,7 @@ Usage:
         --output       samples.csv
         --collection-names  name1 name2 ...
         --collection-paths  /abs/path1 /abs/path2 ...
+        [--reads-dir   reads]
 """
 
 import argparse
@@ -40,6 +41,30 @@ def resolve_col(fieldnames, aliases):
     return None
 
 
+def is_gzipped(path):
+    with open(path, 'rb') as f:
+        return f.read(2) == b'\x1f\x8b'
+
+
+def link_read(filename, target, reads_dir):
+    """Symlink a Galaxy dataset (.dat) under its real filename so tools can detect gzip by extension."""
+    name = os.path.basename(filename)
+    if name in ('', '.', '..'):
+        err('file resolution', f'Invalid filename: "{filename}"')
+    gz = is_gzipped(target)
+    if gz and not name.endswith('.gz'):
+        name += '.gz'
+    elif not gz and name.endswith('.gz'):
+        name = name[:-3]
+    link = os.path.abspath(os.path.join(reads_dir, name))
+    if os.path.lexists(link):
+        if os.path.realpath(link) != os.path.realpath(target):
+            err('file resolution', f'Two different files map to the same name: {name}')
+        return link
+    os.symlink(os.path.abspath(target), link)
+    return link
+
+
 def build_path_map(names, paths):
     """Map both collection element name and file basename to absolute path."""
     m = {}
@@ -55,6 +80,7 @@ def main():
     parser.add_argument('--output',            required=True)
     parser.add_argument('--collection-names',  nargs='*', default=[])
     parser.add_argument('--collection-paths',  nargs='*', default=[])
+    parser.add_argument('--reads-dir',         default='reads')
     args = parser.parse_args()
 
     # ── Stage 1: input file exists ──
@@ -106,14 +132,14 @@ def main():
     if dupes:
         err('sample IDs', f'Duplicate IDs: {", ".join(set(dupes))}')
 
-    # ── Stage 5: resolve filenames to absolute paths ──
+    # ── Stage 5: resolve filenames to symlinks of collection datasets ──
+    os.makedirs(args.reads_dir, exist_ok=True)
+
     def resolve(filename, label):
         if not filename:
             return ''
-        if os.path.isabs(filename):
-            return filename
         if filename in path_map:
-            return path_map[filename]
+            return link_read(filename, path_map[filename], args.reads_dir)
         err('file resolution',
             f'{label}: "{filename}" not found in the collection.\n'
             f'  Available: {", ".join(sorted(path_map))}')

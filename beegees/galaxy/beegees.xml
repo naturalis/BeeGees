@@ -12,7 +12,7 @@
         python3 '${__tool_directory__}/build_samples_csv.py'
             --samples-csv '$samples_file'
             --output samples.csv
-            --collection-names #for $el in $reads# '${el.name}' #end for#
+            --collection-names #for $el in $reads# '${el.element_identifier}' #end for#
             --collection-paths #for $el in $reads# '${el}' #end for#
         &&
         python3 '${__tool_directory__}/build_config_yaml.py'
@@ -38,8 +38,8 @@
             --downsampling-enabled
             --downsampling-max-reads '$downsampling.max_reads'
             #end if
-            --br-r #for $v in $barcode_recovery.r_values.split(',')# '${v.strip()}' #end for#
-            --br-s #for $v in $barcode_recovery.s_values.split(',')# '${v.strip()}' #end for#
+            --br-r #for $v in $barcode_recovery.r_values# '$v' #end for#
+            --br-s #for $v in $barcode_recovery.s_values# '$v' #end for#
             --br-n '$barcode_recovery.n'
             --br-C '$barcode_recovery.C'
             --br-t '$barcode_recovery.t'
@@ -79,7 +79,6 @@
         beegees run
             --config config.yaml
             --profile local
-            --cores \${GALAXY_SLOTS:-4}
             #if $log_file
             --log-file '$log_out'
             #end if
@@ -110,6 +109,11 @@
             <when value="gene_fetch">
                 <section name="gene_fetch" title="gene-fetch settings" expanded="true">
                     <param name="email" type="text" label="NCBI e-mail address">
+                        <sanitizer>
+                            <valid initial="string.printable">
+                                <remove value="&apos;"/>
+                            </valid>
+                        </sanitizer>
                         <validator type="regex" message="Must be a valid e-mail address">[^@]+@[^@]+\.[^@]+</validator>
                     </param>
                     <param name="api_key" type="text" label="NCBI API key"
