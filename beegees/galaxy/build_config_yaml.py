@@ -148,11 +148,13 @@ def parse_args():
 
 
 def build_config(args):
+    # Pipeline scripts join relative output paths onto their output dir, so paths must be absolute
+    samples_file = os.path.abspath(args.samples_file)
     cfg = {
         'run_name':    'galaxy_run',
-        'samples_file': args.samples_file,
-        'output_dir':  args.output_dir,
-        'sequence_reference_file': args.sequence_reference_file or '',
+        'samples_file': samples_file,
+        'output_dir':  os.path.abspath(args.output_dir),
+        'sequence_reference_file': os.path.abspath(args.sequence_reference_file) if args.sequence_reference_file else '',
         'run_gene_fetch': args.ref_mode == 'gene_fetch',
         'fastp': {
             'adapter_r1':      args.fastp_adapter_r1,
@@ -187,7 +189,7 @@ def build_config(args):
             'blast_db':           args.tv_blast_db,
             'db_taxonomy':        args.tv_db_taxonomy,
             'taxval_rank':        args.tv_taxval_rank,
-            'expected_taxonomy':  args.samples_file,
+            'expected_taxonomy':  samples_file,
             'verbose':            args.tv_verbose,
             'min_pident':         args.tv_min_pident,
             'min_length':         args.tv_min_length,
