@@ -65,13 +65,25 @@ def link_read(filename, target, reads_dir):
     return link
 
 
+FASTQ_EXTS = ('.fastqsanger', '.fastq', '.fq')
+
+
+def strip_fastq_ext(name):
+    if name.endswith('.gz'):
+        name = name[:-3]
+    for ext in FASTQ_EXTS:
+        if name.endswith(ext):
+            return name[:-len(ext)]
+    return name
+
+
 def build_path_map(names, paths):
-    """Map both collection element name and file basename to absolute path."""
-    m = {}
-    for name, path in zip(names, paths):
-        m[name] = path
-        m[os.path.basename(path)] = path
-    return m
+    """Map collection element names, and their extension-less stems, to dataset paths."""
+    exact = dict(zip(names, paths))
+    stems = {}
+    for name, path in exact.items():
+        stems.setdefault(strip_fastq_ext(name), []).append(path)
+    return exact, stems
 
 
 def main():
@@ -92,7 +104,7 @@ def main():
         err('collection',
             f'--collection-names ({len(args.collection_names)}) and '
             f'--collection-paths ({len(args.collection_paths)}) have different counts')
-    path_map = build_path_map(args.collection_names, args.collection_paths)
+    path_map, stem_map = build_path_map(args.collection_names, args.collection_paths)
 
     # ── Stage 3: parse and validate CSV columns ──
     with open(args.samples_csv, newline='') as f:
@@ -140,6 +152,14 @@ def main():
             return ''
         if filename in path_map:
             return link_read(filename, path_map[filename], args.reads_dir)
+        # Galaxy collections often drop extensions (test_R1 vs test_R1.fastq.gz)
+        candidates = stem_map.get(strip_fastq_ext(filename), [])
+        if len(candidates) == 1:
+            return link_read(filename, candidates[0], args.reads_dir)
+        if len(candidates) > 1:
+            err('file resolution',
+                f'{label}: "{filename}" matches more than one collection element; '
+                'make the collection element names unique.')
         err('file resolution',
             f'{label}: "{filename}" not found in the collection.\n'
             f'  Available: {", ".join(sorted(path_map))}')
