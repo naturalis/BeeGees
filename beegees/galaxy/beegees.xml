@@ -8,13 +8,17 @@
     <expand macro="requirements"/>
 
     <!-- Galaxy manages its own job scheduling; always use the local profile -->
+    <!-- Galaxy joins command lines into one, so steps must be separated with ';' / '&&' -->
     <command detect_errors="exit_code"><![CDATA[
+        echo '[BeeGees] Step 1/4: resolving samples CSV against the FASTQ collection' &&
         python3 '${__tool_directory__}/build_samples_csv.py'
             --samples-csv '$samples_file'
             --output samples.csv
             --collection-names #for $el in $reads# '${el.element_identifier}' #end for#
             --collection-paths #for $el in $reads# '${el}' #end for#
-        &&
+        || { echo '[BeeGees] FAILED at step 1/4 (build_samples_csv.py): check the samples CSV and collection element names' >&2; exit 1; };
+
+        echo '[BeeGees] Step 2/4: building config.yaml' &&
         python3 '${__tool_directory__}/build_config_yaml.py'
             --output config.yaml
             --ref-mode '$reference_source.ref_mode'
@@ -75,15 +79,21 @@
             #end if
             --tv-min-pident '$taxval.min_pident'
             --tv-min-length '$taxval.min_length'
-        &&
+        || { echo '[BeeGees] FAILED at step 2/4 (build_config_yaml.py): check the tool form parameters' >&2; exit 1; };
+
+        echo '[BeeGees] Step 3/4: running the BeeGees Snakemake pipeline' &&
         beegees run
             --config config.yaml
             --profile local
             #if $log_file
             --log-file '$log_out'
             #end if
-        &&
+        || { echo '[BeeGees] FAILED at step 3/4 (beegees run): see the Snakemake output above for the failing rule' >&2; exit 1; };
+
+        echo '[BeeGees] Step 4/4: zipping diagnostic plots' &&
+        { [ -d beegees_output/05_barcoding_outcome/plots ] || { echo '[BeeGees] FAILED at step 4/4: plots directory beegees_output/05_barcoding_outcome/plots was not created' >&2; exit 1; }; } &&
         zip -rj '$plots_zip' beegees_output/05_barcoding_outcome/plots/
+        || { echo '[BeeGees] FAILED at step 4/4 (zip): could not create the plots archive' >&2; exit 1; }
     ]]></command>
 
     <inputs>
