@@ -363,6 +363,61 @@
         </data>
     </outputs>
 
+    <tests>
+    <test expect_num_outputs="9">
+        <param name="analysis_name" value="test"/>
+        <param name="samples_file" value="samples.csv" ftype="csv"/>
+        <param name="reads">
+            <collection type="list">
+                <element name="test_R1" value="test_R1.fastq.gz" ftype="fastqsanger.gz"/>
+                <element name="test_R2" value="test_R2.fastq.gz" ftype="fastqsanger.gz"/>
+            </collection>
+        </param>
+        <conditional name="reference_source">
+            <param name="ref_mode" value="manual"/>
+            <param name="sequence_reference_file" value="sequence_references.csv" ftype="csv"/>
+            <param name="protein_references">
+                <collection type="list">
+                    <element name="test_protein" value="test_protein.fasta" ftype="fasta"/>
+                </collection>
+            </param>
+        </conditional>
+        <section name="taxval">
+            <conditional name="blast_db_source">
+                <param name="source" value="history"/>
+                <param name="blast_db_file" value="blast_db.fasta" ftype="fasta"/>
+            </conditional>
+            <conditional name="taxonomy_source">
+                <param name="source" value="history"/>
+                <param name="db_taxonomy_file" value="taxonomy.tsv" ftype="tabular"/>
+            </conditional>
+        </section>
+        <output name="structural_validation_csv" ftype="csv">
+            <assert_contents>
+                <has_line_matching expression="^file,seq_id,process_id,.*"/>
+                <has_text text="test_r_1.0_s_50_test_merge"/>
+            </assert_contents>
+        </output>
+        <output name="barcoding_outcome" ftype="tabular">
+            <assert_contents>
+                <has_text text="barcode_outcome"/>
+                <has_line_matching expression="^test\t.*"/>
+            </assert_contents>
+        </output>
+        <output name="final_metrics" ftype="csv">
+            <assert_contents>
+                <has_text text="test"/>
+            </assert_contents>
+        </output>
+        <output name="multiqc_report" ftype="html">
+            <assert_contents>
+                <has_text text="BeeGees Pipeline Report"/>
+            </assert_contents>
+        </output>
+        <output_collection name="plots" type="list"/>
+    </test>
+</tests>
+
     <help><![CDATA[
 **BeeGees** recovers DNA barcodes from low-coverage genome skim data.
 

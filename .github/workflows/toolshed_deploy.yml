@@ -2,10 +2,14 @@ name: Deploy to Galaxy Tool Shed
 
 on:
   push:
-    tags:
-      - "v*"          # trigger on version tags, e.g. v0.6.0
+    branches:
+      - "**"
+    # GitHub ignores path filters for tag pushes, so tags always run
     paths:
       - "beegees/galaxy/**"
+      - ".github/workflows/toolshed_deploy.yml"
+    tags:
+      - "v*"          # trigger on version tags, e.g. v0.6.0
 
 jobs:
   lint:
@@ -48,6 +52,7 @@ jobs:
 
   shed_upload:
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
