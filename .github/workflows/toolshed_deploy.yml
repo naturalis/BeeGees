@@ -48,7 +48,7 @@ jobs:
             --galaxy_branch release_24.1 \
             --conda_auto_install \
             --conda_auto_init \
-            beegees/galaxy/beegees.xml
+            beegees/galaxy/beegees.xml --test_data beegees/galaxy/test-data
 
   shed_upload:
     needs: test
