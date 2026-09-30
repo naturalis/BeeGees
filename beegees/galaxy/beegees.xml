@@ -10,7 +10,7 @@
     <!-- Galaxy manages its own job scheduling; always use the local profile -->
     <!-- Galaxy joins command lines into one, so steps must be separated with ';' / '&&' -->
     <command detect_errors="exit_code"><![CDATA[
-        echo '[BeeGees] Step 1/4: resolving samples CSV against the FASTQ collection' &&
+        echo '[BeeGees] Step 1/3: resolving samples CSV against the FASTQ collection' &&
         python3 '${__tool_directory__}/build_samples_csv.py'
             --samples-csv '$samples_file'
             --output samples.csv
@@ -22,9 +22,9 @@
             --ref-names #for $el in $reference_source.protein_references# '${el.element_identifier}' #end for#
             --ref-paths #for $el in $reference_source.protein_references# '${el}' #end for#
             #end if
-        || { echo '[BeeGees] FAILED at step 1/4 (build_samples_csv.py): check the samples CSV, references CSV and collection element names' >&2; exit 1; };
+        || { echo '[BeeGees] FAILED at step 1/3 (build_samples_csv.py): check the samples CSV, references CSV and collection element names' >&2; exit 1; };
 
-        echo '[BeeGees] Step 2/4: building config.yaml' &&
+        echo '[BeeGees] Step 2/3: building config.yaml' &&
         #if $taxval.blast_db_source.source == 'history'
         ## tv_local_blast.py only runs makeblastdb for .fasta/.fa/.fas, and writes the index next to the file
         mkdir -p blast_db && ln -sf '$taxval.blast_db_source.blast_db_file' blast_db/blast_db.fasta &&
@@ -86,25 +86,26 @@
             #end if
             --tv-min-pident '$taxval.min_pident'
             --tv-min-length '$taxval.min_length'
-        || { echo '[BeeGees] FAILED at step 2/4 (build_config_yaml.py): check the tool form parameters' >&2; exit 1; };
+        || { echo '[BeeGees] FAILED at step 2/3 (build_config_yaml.py): check the tool form parameters' >&2; exit 1; };
 
-        echo '[BeeGees] Step 3/4: running the BeeGees Snakemake pipeline' &&
+        echo '[BeeGees] Step 3/3: running the BeeGees Snakemake pipeline' &&
         beegees run
             --config config.yaml
             --profile local
             #if $log_file
             --log-file '$log_out'
             #end if
-        || { echo '[BeeGees] FAILED at step 3/4 (beegees run): see the Snakemake output above for the failing rule' >&2; exit 1; };
-
-        echo '[BeeGees] Step 4/4: zipping diagnostic plots' &&
-        { [ -d beegees_output/05_barcoding_outcome/plots ] || { echo '[BeeGees] FAILED at step 4/4: plots directory beegees_output/05_barcoding_outcome/plots was not created' >&2; exit 1; }; } &&
-        zip -rj '$plots_zip' beegees_output/05_barcoding_outcome/plots/
-        || { echo '[BeeGees] FAILED at step 4/4 (zip): could not create the plots archive' >&2; exit 1; }
+        || { echo '[BeeGees] FAILED at step 3/3 (beegees run): see the Snakemake output above for the failing rule' >&2; exit 1; }
     ]]></command>
 
     <inputs>
         <!-- ── Core inputs ── -->
+        <param name="analysis_name" type="text" label="Analysis name"
+               help="Used to name all outputs as {analysis name}_beegees_{output}. Letters, digits, hyphens and underscores only.">
+            <validator type="empty_field"/>
+            <validator type="regex" message="Use only letters, digits, hyphens and underscores">^[A-Za-z0-9_-]+$</validator>
+        </param>
+
         <param name="samples_file" type="data" format="csv,tabular"
                label="Samples CSV"
                help="Columns: ID, forward, [reverse], phylum, class, order, family, genus, species. forward/reverse are bare filenames matching files in the FASTQ collection below. The taxonomy columns are used as the expected taxonomy for taxonomic validation."/>
@@ -316,45 +317,48 @@
     <outputs>
         <!-- Final summary outputs -->
         <data name="final_metrics" format="csv"
-              label="${tool.name} on ${on_string}: final metrics"
+              label="${analysis_name}_beegees_final_metrics"
               from_work_dir="beegees_output/galaxy_run_final_metrics.csv"/>
         <data name="barcoding_outcome" format="tabular"
-              label="${tool.name} on ${on_string}: barcoding outcome"
+              label="${analysis_name}_beegees_barcoding_outcome"
               from_work_dir="beegees_output/05_barcoding_outcome/barcoding_outcome.tsv"/>
 
         <!-- Consensus sequences -->
         <data name="all_consensus" format="fasta"
-              label="${tool.name} on ${on_string}: all consensus sequences"
+              label="${analysis_name}_beegees_all_consensus_sequences"
               from_work_dir="beegees_output/03_barcode_recovery/galaxy_run_all_cons_combined.fasta"/>
 
         <!-- Structural validation -->
         <data name="structural_validated" format="fasta"
-              label="${tool.name} on ${on_string}: structurally validated barcodes"
+              label="${analysis_name}_beegees_structurally_validated_barcodes"
               from_work_dir="beegees_output/04_barcode_validation/structural/output_barcode_all_passing.fasta"/>
         <data name="structural_validation_csv" format="csv"
-              label="${tool.name} on ${on_string}: structural validation metrics"
+              label="${analysis_name}_beegees_structural_validation_metrics"
               from_work_dir="beegees_output/04_barcode_validation/structural/structural_validation.csv"/>
 
         <!-- Taxonomic validation -->
         <data name="taxonomic_validated" format="fasta"
-              label="${tool.name} on ${on_string}: taxonomically validated barcodes"
+              label="${analysis_name}_beegees_taxonomically_validated_barcodes"
               from_work_dir="beegees_output/04_barcode_validation/taxonomic/validated_barcodes.fasta"/>
         <data name="taxonomic_validation_csv" format="tabular"
-              label="${tool.name} on ${on_string}: taxonomic validation metrics"
+              label="${analysis_name}_beegees_taxonomic_validation_metrics"
               from_work_dir="beegees_output/04_barcode_validation/taxonomic/metrics/02_taxonomic_validation.csv"/>
 
         <!-- MultiQC report -->
         <data name="multiqc_report" format="html"
-              label="${tool.name} on ${on_string}: MultiQC report"
+              label="${analysis_name}_beegees_multiqc_report"
               from_work_dir="beegees_output/05_barcoding_outcome/multiqc_report/multiqc_report.html"/>
 
         <!-- Diagnostic plots -->
-        <data name="plots_zip" format="zip"
-              label="${tool.name} on ${on_string}: diagnostic plots"/>
+        <collection name="plots" type="list"
+                    label="${analysis_name}_beegees_diagnostic_plots">
+            <discover_datasets pattern="(?P&lt;designation&gt;.+)\.png" format="png"
+                               directory="beegees_output/05_barcoding_outcome/plots"/>
+        </collection>
 
         <!-- Optional Snakemake log -->
         <data name="log_out" format="txt"
-              label="${tool.name} on ${on_string}: Snakemake log">
+              label="${analysis_name}_beegees_snakemake_log">
             <filter>log_file</filter>
         </data>
     </outputs>
