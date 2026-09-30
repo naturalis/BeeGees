@@ -109,7 +109,7 @@
             <validator type="regex" message="Use only letters, digits, hyphens and underscores">^[A-Za-z0-9_-]+$</validator>
         </param>
 
-        <param name="samples_file" type="data" format="csv,tabular"
+        <param name="samples_file" type="data" format="csv"
                label="Samples CSV"
                help="Columns: ID, forward, [reverse], phylum, class, order, family, genus, species, [taxid]. forward/reverse are bare filenames matching files in the FASTQ collection below. The taxonomy columns are used as the expected taxonomy for taxonomic validation. A taxid column is required when gene-fetch uses the taxid input type."/>
 
@@ -161,7 +161,7 @@
                 </section>
             </when>
             <when value="manual">
-                <param name="sequence_reference_file" type="data" format="csv,tabular"
+                <param name="sequence_reference_file" type="data" format="csv"
                        label="Sequence references CSV"
                        help="Columns: ID, protein_reference_path. protein_reference_path is a bare filename matching a file in the protein reference collection below. Every sample ID needs a row."/>
                 <param name="protein_references" type="data_collection" collection_type="list"
@@ -349,7 +349,7 @@
         <data name="taxonomic_validated" format="fasta"
               label="${analysis_name}_beegees_taxonomically_validated_barcodes"
               from_work_dir="beegees_output/04_barcode_validation/taxonomic/validated_barcodes.fasta"/>
-        <data name="taxonomic_validation_csv" format="tabular"
+        <data name="taxonomic_validation_csv" format="csv"
               label="${analysis_name}_beegees_taxonomic_validation_metrics"
               from_work_dir="beegees_output/04_barcode_validation/taxonomic/metrics/02_taxonomic_validation.csv"/>
 
