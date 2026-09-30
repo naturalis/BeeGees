@@ -178,14 +178,16 @@
         </section>
 
         <!-- ── Downsampling ── -->
-        <conditional name="downsampling">
-            <param name="enabled" type="boolean" checked="false" label="Enable read downsampling"/>
-            <when value="true">
-                <param name="max_reads" type="integer" value="100000" min="1"
-                       label="Maximum read pairs to process"/>
-            </when>
-            <when value="false"/>
-        </conditional>
+    <conditional name="downsampling">
+        <param name="enable_downsampling" type="select" label="Enable downsampling?">
+            <option value="false" selected="true">No</option>
+            <option value="true">Yes</option>
+        </param>
+        <when value="true">
+            <!-- downsampling options -->
+        </when>
+        <when value="false" />
+    </conditional>
 
         <!-- ── Barcode recovery ── -->
         <section name="barcode_recovery" title="Barcode recovery (MitoGeneExtractor)" expanded="false">
@@ -227,19 +229,21 @@
             <param name="outlier_percentile" type="float" value="90.0" min="0.0" max="100.0"
                    label="Statistical outlier percentile threshold"/>
             <conditional name="reference_filter">
-                <param name="use_ref_filter" type="boolean" checked="false"
-                       label="Enable reference-based sequence filter (step 4)"/>
+                <param name="use_ref_filter" type="select" label="Enable reference-based sequence filter (step 4)">
+                    <option value="false" selected="true">No</option>
+                    <option value="true">Yes</option>
+                </param>
                 <when value="true">
                     <param name="reference_dir" type="data" format="fasta"
-                           label="Reference FASTA for filtering"
-                           help="Single FASTA file used as the reference directory source."/>
+                        label="Reference FASTA for filtering"
+                        help="Single FASTA file used as the reference directory source."/>
                     <param name="reference_filter_mode" type="select" label="Filter mode">
                         <option value="remove_similar" selected="true">Remove similar to reference (contaminant removal)</option>
                         <option value="keep_similar">Keep similar to reference (outlier removal)</option>
                     </param>
                 </when>
                 <when value="false"/>
-            </conditional>
+        </conditional>
         </section>
 
         <!-- ── Structural validation ── -->
@@ -414,7 +418,7 @@
                 <has_text text="BeeGees Pipeline Report"/>
             </assert_contents>
         </output>
-        <output_collection name="plots" type="list"/>
+        <output_collection name="plots" type="list" count="12"/>
     </test>
 </tests>
 
