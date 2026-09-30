@@ -48,7 +48,7 @@
             --fastp-adapter-r1 '$fastp.adapter_r1'
             --fastp-adapter-r2 '$fastp.adapter_r2'
             --fastp-extra-args '$fastp.extra_fastp_args'
-            #if $downsampling.enabled
+            #if $downsampling.enabled == 'true'
             --downsampling-enabled
             --downsampling-max-reads '$downsampling.max_reads'
             #end if
@@ -62,7 +62,7 @@
             --fc-at-difference '$fasta_cleaner.at_difference'
             --fc-at-mode '$fasta_cleaner.at_mode'
             --fc-outlier-percentile '$fasta_cleaner.outlier_percentile'
-            #if $fasta_cleaner.reference_filter.use_ref_filter
+            #if $fasta_cleaner.reference_filter.use_ref_filter == 'true'
             --fc-reference-dir '$fasta_cleaner.reference_filter.reference_dir'
             --fc-reference-filter-mode '$fasta_cleaner.reference_filter.reference_filter_mode'
             #end if
@@ -178,16 +178,17 @@
         </section>
 
         <!-- ── Downsampling ── -->
-    <conditional name="downsampling">
-        <param name="enable_downsampling" type="select" label="Enable downsampling?">
-            <option value="false" selected="true">No</option>
-            <option value="true">Yes</option>
-        </param>
-        <when value="true">
-            <!-- downsampling options -->
-        </when>
-        <when value="false" />
-    </conditional>
+        <conditional name="downsampling">
+            <param name="enabled" type="select" label="Enable read downsampling">
+                <option value="false" selected="true">No</option>
+                <option value="true">Yes</option>
+            </param>
+            <when value="true">
+                <param name="max_reads" type="integer" value="100000" min="1"
+                       label="Maximum read pairs to process"/>
+            </when>
+            <when value="false"/>
+        </conditional>
 
         <!-- ── Barcode recovery ── -->
         <section name="barcode_recovery" title="Barcode recovery (MitoGeneExtractor)" expanded="false">
@@ -235,15 +236,15 @@
                 </param>
                 <when value="true">
                     <param name="reference_dir" type="data" format="fasta"
-                        label="Reference FASTA for filtering"
-                        help="Single FASTA file used as the reference directory source."/>
+                           label="Reference FASTA for filtering"
+                           help="Single FASTA file used as the reference directory source."/>
                     <param name="reference_filter_mode" type="select" label="Filter mode">
                         <option value="remove_similar" selected="true">Remove similar to reference (contaminant removal)</option>
                         <option value="keep_similar">Keep similar to reference (outlier removal)</option>
                     </param>
                 </when>
                 <when value="false"/>
-        </conditional>
+            </conditional>
         </section>
 
         <!-- ── Structural validation ── -->
