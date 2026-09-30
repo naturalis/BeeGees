@@ -16,6 +16,9 @@
             --output samples.csv
             --collection-names #for $el in $reads# '${el.element_identifier}' #end for#
             --collection-paths #for $el in $reads# '${el}' #end for#
+            #if $reference_source.ref_mode == 'gene_fetch' and $reference_source.gene_fetch.input_type == 'taxid'
+            --require-taxid
+            #end if
             #if $reference_source.ref_mode == 'manual'
             --refs-csv '$reference_source.sequence_reference_file'
             --refs-output sequence_references.csv
@@ -108,7 +111,7 @@
 
         <param name="samples_file" type="data" format="csv,tabular"
                label="Samples CSV"
-               help="Columns: ID, forward, [reverse], phylum, class, order, family, genus, species. forward/reverse are bare filenames matching files in the FASTQ collection below. The taxonomy columns are used as the expected taxonomy for taxonomic validation."/>
+               help="Columns: ID, forward, [reverse], phylum, class, order, family, genus, species, [taxid]. forward/reverse are bare filenames matching files in the FASTQ collection below. The taxonomy columns are used as the expected taxonomy for taxonomic validation. A taxid column is required when gene-fetch uses the taxid input type."/>
 
         <param name="reads" type="data_collection" collection_type="list"
                format="fastq,fastq.gz,fastqsanger,fastqsanger.gz"
@@ -148,9 +151,10 @@
                     <param name="minimum_length" type="integer" value="500" min="1"
                            label="Minimum protein reference length (aa)"/>
                     <param name="input_type" type="select"
-                           label="Taxonomy input type in samples CSV">
+                           label="Taxonomy input type in samples CSV"
+                           help="How gene-fetch looks up each sample on NCBI. 'taxid' needs a taxid column in the samples CSV, in addition to the taxonomy columns.">
                         <option value="hierarchical" selected="true">Hierarchical columns (phylum / class / … / species)</option>
-                        <option value="taxid">Single taxid column</option>
+                        <option value="taxid">NCBI taxid column</option>
                     </param>
                     <param name="genbank" type="boolean" checked="true"
                            label="Download GenBank records for retrieved references"/>
@@ -457,6 +461,14 @@ for taxonomic validation.
    sample-001,sample-001-R1.fastq.gz,sample-001-R2.fastq.gz,Arthropoda,Insecta,Coleoptera,Carabidae,Carabus,Carabus coriaceus
    sample-002,sample-002-R1.fastq.gz,sample-002-R2.fastq.gz,Arthropoda,Insecta,Lepidoptera,Nymphalidae,Vanessa,Vanessa atalanta
    sample-003,sample-003-R1.fastq.gz,sample-003-R2.fastq.gz,Arthropoda,Insecta,Diptera,Drosophilidae,Drosophila,Drosophila melanogaster
+
+*gene-fetch with taxid input*: add a ``taxid`` column with the NCBI taxid of each sample.
+The taxonomy columns are still required for taxonomic validation. Any extra columns are passed through unchanged.
+
+.. csv-table::
+   :header: ID,forward,reverse,phylum,class,order,family,genus,species,taxid
+
+   sample-003,sample-003-R1.fastq.gz,sample-003-R2.fastq.gz,Arthropoda,Insecta,Diptera,Drosophilidae,Drosophila,Drosophila melanogaster,7227
 
 ----
 

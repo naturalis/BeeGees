@@ -173,7 +173,8 @@ def build_config(args):
         'run_name':    'galaxy_run',
         'samples_file': samples_file,
         'output_dir':  os.path.abspath(args.output_dir),
-        'sequence_reference_file': os.path.abspath(args.sequence_reference_file) if args.sequence_reference_file else '',
+        'sequence_reference_file': (os.path.abspath(args.sequence_reference_file)
+                                    if args.sequence_reference_file else ''),
         'run_gene_fetch': args.ref_mode == 'gene_fetch',
         'fastp': {
             'adapter_r1':      args.fastp_adapter_r1,

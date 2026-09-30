@@ -1,9 +1,10 @@
 """Resolve a user-supplied samples CSV for BeeGees.
 
-The user provides a CSV with columns ID, forward, [reverse], and optional
-taxonomy columns where forward/reverse are bare filenames (not full paths).
-This script maps those filenames to absolute paths using the Galaxy collection,
-then writes the resolved CSV that BeeGees expects.
+The user provides a CSV with columns ID, forward, [reverse], the taxonomy
+columns and optionally taxid, where forward/reverse are bare filenames (not
+full paths). This script maps those filenames to absolute paths using the
+Galaxy collection, then writes the resolved CSV that BeeGees expects. All
+other columns are passed through unchanged (gene-fetch reads taxid from it).
 
 Usage:
     python build_samples_csv.py
@@ -12,6 +13,7 @@ Usage:
         --collection-names  name1 name2 ...
         --collection-paths  /abs/path1 /abs/path2 ...
         [--reads-dir   reads]
+        [--require-taxid]
         [--refs-csv    /path/to/user_sequence_references.csv
          --ref-names   name1 ...  --ref-paths  /abs/path1 ...
          --refs-output sequence_references.csv  --refs-dir  references]
@@ -158,6 +160,8 @@ def main():
     parser.add_argument('--collection-names',  nargs='*', default=[])
     parser.add_argument('--collection-paths',  nargs='*', default=[])
     parser.add_argument('--reads-dir',         default='reads')
+    # gene-fetch taxid mode reads a taxid column from the resolved CSV
+    parser.add_argument('--require-taxid',     action='store_true')
     # Manual reference mode: references CSV + protein FASTA collection
     parser.add_argument('--refs-csv',          default=None)
     parser.add_argument('--refs-output',       default='sequence_references.csv')
@@ -205,7 +209,15 @@ def main():
         if tax_missing:
             err('columns', 'Missing taxonomy column(s) (used as expected taxonomy): '
                 f'{", ".join(tax_missing)}\n  Found: {", ".join(fieldnames)}')
+        if args.require_taxid and 'taxid' not in fieldnames:
+            err('columns', 'Missing taxid column (required when gene-fetch taxonomy input type is "taxid")'
+                f'\n  Found: {", ".join(fieldnames)}')
         rows = list(reader)
+
+    # csv.DictReader stores surplus fields under the key None
+    long_rows = [r[col['ID']] for r in rows if None in r]
+    if long_rows:
+        err('columns', f'Row(s) with more fields than the header: {", ".join(long_rows)}')
 
     # ── Stage 4: sample ID validation ──
     ids = [r[col['ID']] for r in rows]
@@ -217,6 +229,10 @@ def main():
     dupes = [i for i in ids if ids.count(i) > 1]
     if dupes:
         err('sample IDs', f'Duplicate IDs: {", ".join(set(dupes))}')
+    if args.require_taxid:
+        no_taxid = [r[col['ID']] for r in rows if not (r.get('taxid') or '').strip()]
+        if no_taxid:
+            err('sample IDs', f'No taxid given for sample(s): {", ".join(no_taxid)}')
 
     # ── Stage 5: resolve filenames to symlinks of collection datasets ──
     os.makedirs(args.reads_dir, exist_ok=True)
@@ -226,23 +242,19 @@ def main():
             return ''
         return resolve_file(filename, label, path_map, stem_map, FASTQ_EXTS, args.reads_dir, 'FASTQ')
 
+    # Keep every uploaded column (e.g. taxid); only the read paths are rewritten
     out_rows = []
     for r in rows:
-        out = {
-            'ID':      r[col['ID']],
-            'forward': resolve(r[col['forward']], f"sample {r[col['ID']]} forward"),
-        }
+        out = dict(r)
+        out[col['forward']] = resolve(r[col['forward']], f"sample {r[col['ID']]} forward")
         if rev_col:
-            out['reverse'] = resolve(r.get(rev_col, ''), f"sample {r[col['ID']]} reverse")
-        for tc in TAX_COLS:
-            out[tc] = r.get(tc, '')
+            out[rev_col] = resolve(r.get(rev_col, ''), f"sample {r[col['ID']]} reverse")
         out_rows.append(out)
 
     # ── Stage 6: write output ──
-    out_cols = ['ID', 'forward'] + (['reverse'] if rev_col else []) + TAX_COLS
     try:
         with open(args.output, 'w', newline='') as f:
-            w = csv.DictWriter(f, fieldnames=out_cols)
+            w = csv.DictWriter(f, fieldnames=fieldnames)
             w.writeheader()
             w.writerows(out_rows)
     except OSError as e:
