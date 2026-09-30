@@ -5,8 +5,8 @@
 
     <xml name="requirements">
         <requirements>
-            <requirement type="package" version="@TOOL_VERSION@" channel="bioconda">beegees</requirement>
-            <requirement type="package" channel="conda-forge">pyyaml</requirement>
+            <requirement type="package" version="@TOOL_VERSION@">beegees</requirement>
+            <requirement type="package">pyyaml</requirement>
         </requirements>
     </xml>
 
